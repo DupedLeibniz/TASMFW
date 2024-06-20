@@ -1,9 +1,9 @@
-;████████╗ █████╗ ███████╗███╗   ███╗    ███████╗██╗    ██╗
-;╚══██╔══╝██╔══██╗██╔════╝████╗ ████║    ██╔════╝██║    ██║
-;   ██║   ███████║███████╗██╔████╔██║    █████╗  ██║ █╗ ██║
-;   ██║   ██╔══██║╚════██║██║╚██╔╝██║    ██╔══╝  ██║███╗██║
-;   ██║   ██║  ██║███████║██║ ╚═╝ ██║    ██║     ╚███╔███╔╝
-;   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝    ╚═╝      ╚══╝╚══╝ 
+;████████╗ █████╗ ███████╗███╗   ███╗    ██╗  ██╗███████╗██╗    ██╗
+;╚══██╔══╝██╔══██╗██╔════╝████╗ ████║    ██║  ██║██╔════╝██║    ██║
+;   ██║   ███████║███████╗██╔████╔██║    ███████║█████╗  ██║ █╗ ██║
+;   ██║   ██╔══██║╚════██║██║╚██╔╝██║    ██╔══██║██╔══╝  ██║███╗██║
+;   ██║   ██║  ██║███████║██║ ╚═╝ ██║    ██║  ██║██║     ╚███╔███╔╝
+;   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝    ╚═╝  ╚═╝╚═╝      ╚══╝╚══╝                                                                  
 ;	┳┓    ┓┏          
 ;	┣┫┓┏  ┣┫┏┓┏┓┓┏┏┓┏╋
 ;	┻┛┗┫  ┛┗┗┻┛ ┗┛┗ ┛┗
@@ -12,6 +12,8 @@
 .MODEL SMALL
 ; ----------------------------=[MACROS]=----------------------------
 	
+	; DEPRECATED
+	; Reason: When invoked, displays garbage on the screen
 	INITSTRINGS MACRO
 		; Initialize SEG & OFF for String display
 		MOV AX, @DATA ; Initialize DS & ES (Segment & Offset)
@@ -30,9 +32,44 @@
 		; Keyboard string input
 		MOV AH, 3FH ; Request input
 		MOV BX, 00D ; Input code (00)
-		MOV CX, 30D ; Write max string length
+		MOV CX, 4 ; Write max string length
 		LEA DX, variable ; Assigns entered string to variable
 		INT 21H
+	ENDM
+	
+	; TODO originally it used a loop, but a local label error was shown if called twice
+	READNUMLEN3 MACRO variable
+		; Reads a 3 digit number
+		; Number should be input either as 
+		; 000
+		; 00X
+		; 0XX
+		; XXX
+		
+		MOV variable, 0 ; Start the variable at 0
+		
+		MOV AH, 01H ; Request reading a char
+		INT 21H ; Entered char is in AL
+		SUB AL, 48D ; Cast AL to its decimal equivalent
+		MOV BL, 100 ; Multiply this digit by 100
+		MUL BL
+		
+		ADD variable, AL ; Add hundreds 
+		
+		MOV AH, 01H ; Request reading a char
+		INT 21H ; Entered char is in AL
+		SUB AL, 48D ; Cast AL to its decimal equivalent
+		MOV BL, 10 ; Multiply this digit by 10
+		MUL BL
+		
+		ADD variable, AL ; Add dozens 
+		
+		MOV AH, 01H ; Request reading a char
+		INT 21H ; Entered char is in AL
+		SUB AL, 48D ; Cast AL to its decimal equivalent
+		
+		ADD variable, AL ; Add hundreds 
+		
 	ENDM
 	
 	CASTTODECIMAL MACRO ascii
@@ -124,11 +161,59 @@
 	
 	ENDM
 	
-; ----------------------------=[MACROS]=----------------------------
-.STACK
-.DATA
+	AWAIT MACRO
+		MOV AH, 0DH
+		INT 21H
+		MOV AH, 01H
+		INT 21H
+	ENDM
+	
+	; Experimental macros
+	READSTRING MACRO buffer
+		LOCAL nextchar
+		MOV CX, 100
+		MOV DI, OFFSET buffer
+		XOR AX, AX
+		MOV AH, 0AH
+		INT 21H
+		
+		nextchar:
+		MOV AH, 01H
+		INT 21H
+		CMP AL, 13
+		JE done
+		MOV [DI], AL
+		INC DI
+		LOOP nextchar
+		
+		done:
+		MOV [DI], "$"
+	ENDM
+	
+	PRINTSTRING MACRO buffer
+	LOCAL printchar
+	MOV DI, OFFSET buffer
+	printchar:
+	MOV AL, [DI]
+	CMP AL, "$"
+	JE done2
+	MOV AH, 02H
+	INT 21H
+	INC DI
+	JMP printchar
+	done2:
+	ENDM
+	; Experimental macros
+	
+HFWSTACK SEGMENT STACK
+	DB 64 DUP (00H) ; TODO 00H?
+HFWSTACK ENDS
 
+; ----------------------------=[MACROS]=----------------------------
+HFWDATA SEGMENT
 	; [!] Harvest framework variables (DO NOT MODIFY) [!]
+		background DB 10 DUP("$")
+		foreground DB 10 DUP("$")
 		sepRegstat DB 0AH, "[REGISTERS STATUS (ASCII)]$"
 		newLine DB 0AH, 0DH, "$"
 		vignette DB "[*]$"
@@ -142,31 +227,32 @@
 		dlVignette DB "[DL] $"
 		wildnum DB 10 DUP("$")
 		msgDebug DB 0AH, "[DEBUG MESSAGE]"
+		multiplier DB 10 DUP("$")
+		readLen DB 10 DUP("$")
+		zero DB "0$"
 	; [!] Harvest framework variables (DO NOT MODIFY) [!]
+HFWDATA ENDS
 
-	msg1 DB "<YOUR_TEXT>$"
-	msg2 DB 0AH, "<YOUR_TEXT>$"
-	n1 DB 10 DUP("$")
-
-.CODE
-MAIN PROC FAR
-; -----------------------------=[CODE]=-----------------------------	
-	CLEAR
-	INITSTRINGS
-	
-	; TODO Your code goes here
-	
-	
-	
-	EXIT
-; -----------------------------=[CODE]=-----------------------------	
-MAIN ENDP
+HFWCODE SEGMENT 'CODE'
+	ASSUME SS:HFWSTACK, DS:HFWDATA, CS:HFWCODE
+	MOV AX, HFWDATA
+	MOV DS, AX
 ; Processes
 PRINT16BITNUM PROC
+
+	CMP AX, 0
+	JE printZero
+	JNE printNumber
+	
+	printZero:
+		PRINTSTR zero
+		RET
+		
+	printNumber:
 	; Prints a 16 bit number stored in AX
 	; Don't forget to do MOV DX, AX before storing the number in AX
 	; and calling the process
-	; Also, if any operation involves AX, don't forget to store AX 
+	; Also, if any operation involves AX, CX, don't forget to store AX, CX 
 	; in another variable (word) to restore it later
 	MOV CX, 0
 	MOV DX, 0
@@ -197,4 +283,5 @@ PRINT16BITNUM PROC
 	ret
 PRINT16BITNUM ENDP
 ; Processes
-END MAIN
+HFWCODE ENDS
+;END MAIN2
